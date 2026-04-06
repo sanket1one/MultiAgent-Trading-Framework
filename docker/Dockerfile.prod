@@ -1,0 +1,38 @@
+# We're using the pinned base image you specified
+FROM python:3.11-slim@sha256:9456484917172409489889112174412767117703853937830091938060087558
+
+# Set environment variables for production
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app \
+    APP_ENV=production
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Pre-copy to maximize docker cache layers for dependencies
+COPY requirements.txt .
+
+# Install without keeping the pip package cache
+RUN pip install --no-cache-dir -r requirements.txt
+
+# For production, we DO NOT rely on volume mounting. 
+# We copy the entire application code directly into the immutable image.
+COPY . /app
+
+# Create a non-root system user for security purposes
+RUN adduser --disabled-password --gecos "" fastapi-user \
+    && chown -R fastapi-user /app
+USER fastapi-user
+
+# Expose backend port
+EXPOSE 8000
+
+# Start command overrides the --reload flag and enables multiple pre-forked workers 
+# for better throughput in production environments
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]

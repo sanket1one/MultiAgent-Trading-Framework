@@ -1,0 +1,27 @@
+FROM python:3.11-slim
+
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONPATH=/app \
+    PYTHONUNBUFFERED=True
+
+# Set working directory
+WORKDIR /app
+
+# Install system dependencies (helpful for scientific/financial python packages)
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy the requirements file first to leverage Docker cache
+COPY requirements.txt .
+
+# Install dependencies
+RUN pip3 install --no-cache-dir -r requirements.txt
+
+# Expose the API port
+EXPOSE 8000
+
+# Start command
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
