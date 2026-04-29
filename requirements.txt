@@ -6,6 +6,7 @@ pydantic-settings>=2.2.0
 
 # State Management
 redis>=5.0.0
+motor>=3.3.0
 
 # Financial Data & Processing
 yfinance>=0.2.37

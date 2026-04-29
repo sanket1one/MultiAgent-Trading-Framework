@@ -13,11 +13,14 @@ services:
     environment:
       # Override the Redis URL to point to the docker container service name
       - REDIS_URL=redis://redis:6379/0
+      # Override MongoDB URL to point to the docker container
+      - MONGODB_URL=mongodb://mongodb:27017/
     env_file:
       # Load other secrets (like FINNHUB_KEY) from the root .env file
       - ../.env
     depends_on:
       - redis
+      - mongodb
 
   redis:
     image: redis:7-alpine
@@ -28,5 +31,15 @@ services:
       # Persist Redis data using a named volume
       - trading_redis_data:/data
 
+  mongodb:
+    image: mongo:latest
+    container_name: trading_framework_mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      # Persist MongoDB data
+      - trading_mongodb_data:/data/db
+
 volumes:
   trading_redis_data:
+  trading_mongodb_data:
