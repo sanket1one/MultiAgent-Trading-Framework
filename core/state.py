@@ -7,7 +7,7 @@ class RedisManager:
         self.client: Optional[aioredis.Redis] = None
     
     async def connect(self):
-        self.client = aioredis.from_url(settings.redis_url, decode_responses=True)
+        self.client = aioredis.from_url(settings.redis_url, decode_responses=True, max_connections=10)
     
     async def disconnect(self):
         if self.client:

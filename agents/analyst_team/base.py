@@ -6,6 +6,7 @@ Implements the Template Method pattern:
 """
 import json
 import logging
+import time
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional
 
@@ -51,11 +52,13 @@ class BaseAnalystAgent(ABC):
         """
         ticker = ticker.upper()
         cache_key = self._cache_key(ticker)
+        t_start = time.perf_counter()
 
         # --- Step 1: Check cache ---
         cached = await self._get_cached(cache_key)
         if cached:
-            logger.info(f"[{self.agent_type}] Cache HIT for {ticker}")
+            t_ms = (time.perf_counter() - t_start) * 1000
+            logger.info(f"[{self.agent_type}] Cache HIT for {ticker} ({t_ms:.1f}ms)")
             return cached
 
         logger.info(f"[{self.agent_type}] Cache MISS — fetching data for {ticker}")
@@ -79,6 +82,12 @@ class BaseAnalystAgent(ABC):
             raw_data=raw_data,
         )
         await self._set_cache(cache_key, result)
+
+        t_ms = (time.perf_counter() - t_start) * 1000
+        logger.info(
+            f"[{self.agent_type}] {ticker} completed in {t_ms:.1f}ms "
+            f"(signal={signal} confidence={confidence:.2f})"
+        )
         return result
 
     # ------------------------------------------------------------------

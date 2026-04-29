@@ -59,27 +59,53 @@ async def fetch_technical_indicators(ticker: str, period: str = "3mo") -> Dict[s
     Fetch OHLCV history for `period` and compute RSI, MACD, and SMA indicators.
     """
     def _fetch() -> Dict[str, Any]:
+        # yfinance often returns MultiIndex columns now; we flatten them if present
         df = yf.download(ticker, period=period, auto_adjust=True, progress=False)
+        
         if df.empty:
             return {"ticker": ticker, "error": "No OHLCV data returned"}
 
-        close = df["Close"].squeeze()
-        df["RSI"] = ta.momentum.RSIIndicator(close=close, window=14).rsi()
-        macd_obj = ta.trend.MACD(close=close)
-        df["MACD"] = macd_obj.macd()
-        df["MACD_Signal"] = macd_obj.macd_signal()
-        df["SMA_50"] = ta.trend.SMAIndicator(close=close, window=50).sma_indicator()
-        df["SMA_200"] = ta.trend.SMAIndicator(close=close, window=200).sma_indicator()
+        # Flatten MultiIndex columns if they exist (e.g., [('Close', 'AAPL')] -> 'Close')
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+
+        # Ensure we have the required columns
+        required = ["Close"]
+        for col in required:
+            if col not in df.columns:
+                return {"ticker": ticker, "error": f"Missing required column: {col}"}
+
+        close = df["Close"]
+        
+        # Compute indicators using 'ta' library
+        try:
+            df["RSI"] = ta.momentum.RSIIndicator(close=close, window=14).rsi()
+            macd_obj = ta.trend.MACD(close=close)
+            df["MACD"] = macd_obj.macd()
+            df["MACD_Signal"] = macd_obj.macd_signal()
+            df["SMA_50"] = ta.trend.SMAIndicator(close=close, window=50).sma_indicator()
+            df["SMA_200"] = ta.trend.SMAIndicator(close=close, window=200).sma_indicator()
+        except Exception as e:
+            logger.error(f"[TechnicalTool] Indicator computation failed for {ticker}: {e}")
 
         latest = df.iloc[-1]
+        
+        # Convert to float and round carefully
+        def get_val(series_val, decimals=2):
+            try:
+                v = float(series_val)
+                return round(v, decimals) if pd.notna(v) else None
+            except (TypeError, ValueError):
+                return None
+
         return {
             "ticker": ticker,
-            "rsi": round(float(latest["RSI"]), 2) if pd.notna(latest["RSI"]) else None,
-            "macd": round(float(latest["MACD"]), 4) if pd.notna(latest["MACD"]) else None,
-            "macd_signal": round(float(latest["MACD_Signal"]), 4) if pd.notna(latest["MACD_Signal"]) else None,
-            "sma_50": round(float(latest["SMA_50"]), 2) if pd.notna(latest["SMA_50"]) else None,
-            "sma_200": round(float(latest["SMA_200"]), 2) if pd.notna(latest["SMA_200"]) else None,
-            "close_price": round(float(latest["Close"]), 2),
+            "rsi": get_val(latest.get("RSI"), 2),
+            "macd": get_val(latest.get("MACD"), 4),
+            "macd_signal": get_val(latest.get("MACD_Signal"), 4),
+            "sma_50": get_val(latest.get("SMA_50"), 2),
+            "sma_200": get_val(latest.get("SMA_200"), 2),
+            "close_price": get_val(latest.get("Close"), 2),
             "period": period,
         }
 
@@ -102,9 +128,15 @@ async def fetch_sentiment_data(ticker: str) -> Dict[str, Any]:
     """
     def _fetch() -> Dict[str, Any]:
         client = finnhub.Client(api_key=settings.finnhub_api_key)
-        data = client.stock_social_sentiment(ticker, _from="2024-01-01", to="2025-12-31")
-        reddit = data.get("reddit", [])
-        twitter = data.get("twitter", [])
+        # Use a more recent range to avoid 403 on older data if applicable, 
+        # but usually 403 means the endpoint is restricted.
+        try:
+            data = client.stock_social_sentiment(ticker)
+            reddit = data.get("reddit", [])
+            twitter = data.get("twitter", [])
+        except Exception as e:
+            # Re-raise to be caught by the outer try-except
+            raise e
 
         def avg(items: list, key: str) -> float:
             vals = [i[key] for i in items if key in i]
@@ -139,7 +171,12 @@ async def fetch_news_headlines(ticker: str, limit: int = 10) -> Dict[str, Any]:
     """
     def _fetch() -> Dict[str, Any]:
         client = finnhub.Client(api_key=settings.finnhub_api_key)
-        news_items = client.company_news(ticker, _from="2025-01-01", to="2025-12-31")
+        # Use a more reasonable date range (last 30 days)
+        from datetime import datetime, timedelta
+        end_date = datetime.now().strftime('%Y-%m-%d')
+        start_date = (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
+        
+        news_items = client.company_news(ticker, _from=start_date, to=end_date)
         headlines = [
             {
                 "headline": item.get("headline", ""),

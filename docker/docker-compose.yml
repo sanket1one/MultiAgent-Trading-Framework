@@ -25,11 +25,14 @@ services:
   redis:
     image: redis:7-alpine
     container_name: trading_framework_redis
+    command: redis-server /usr/local/etc/redis/redis.conf
     ports:
       - "6379:6379"
     volumes:
       # Persist Redis data using a named volume
       - trading_redis_data:/data
+      # Custom Redis config for memory limits and LRU eviction
+      - ./redis.conf:/usr/local/etc/redis/redis.conf
 
   mongodb:
     image: mongo:latest
