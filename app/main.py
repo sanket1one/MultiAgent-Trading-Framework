@@ -14,7 +14,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Number of background queue workers
-NUM_WORKERS = 4
+NUM_WORKERS = 16
 
 
 @asynccontextmanager

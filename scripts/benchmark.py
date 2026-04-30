@@ -2,6 +2,7 @@
 scripts/benchmark.py
 Benchmarking script for MultiAgent Trading Framework.
 Measures latency (P50, P95, P99), throughput (RPS), and success rate.
+Supports both /analyze (sync) and /enqueue (async) endpoints.
 """
 import asyncio
 import time
@@ -24,21 +25,22 @@ class BenchResult(BaseModel):
     success: bool
 
 
-async def run_request(client: httpx.AsyncClient, base_url: str, ticker: str) -> BenchResult:
+async def run_request(client: httpx.AsyncClient, base_url: str, endpoint: str, ticker: str) -> BenchResult:
     start_time = time.perf_counter()
     success = False
     status_code = 0
     try:
         response = await client.post(
-            f"{base_url}/api/v1/trader/execution/analyze",
+            f"{base_url}/api/v1/trader/execution/{endpoint}",
             json={"ticker": ticker},
             timeout=30.0
         )
         status_code = response.status_code
-        if status_code == 200:
+        # Sync returns 200, Async/Enqueue returns 202
+        if status_code in (200, 202):
             success = True
     except Exception as e:
-        print(f"Request failed for {ticker}: {e}")
+        # print(f"Request failed for {ticker}: {e}")
         status_code = 500
 
     latency = (time.perf_counter() - start_time) * 1000
@@ -49,13 +51,15 @@ async def benchmark(
     num_requests: int,
     concurrency: int,
     base_url: str,
+    endpoint: str,
     tickers: List[str]
 ):
     print(f"\n🚀 Starting Benchmark")
     print(f"-------------------------------")
     print(f"Total Requests: {num_requests}")
     print(f"Concurrency:    {concurrency}")
-    print(f"Target URL:     {base_url}")
+    print(f"Target Endpoint: {endpoint}")
+    print(f"Target URL:      {base_url}")
     print(f"-------------------------------\n")
 
     results: List[BenchResult] = []
@@ -65,7 +69,7 @@ async def benchmark(
 
     async def sem_run(ticker: str):
         async with semaphore:
-            return await run_request(client, base_url, ticker)
+            return await run_request(client, base_url, endpoint, ticker)
 
     start_bench = time.perf_counter()
     
@@ -105,15 +109,22 @@ async def benchmark(
     print(f"Min Latency:        {min(latencies):.1f}ms")
     print(f"Avg Latency:        {avg_latency:.1f}ms")
     print(f"P50 (Median):       {p50:.1f}ms")
-    print(f"P95 Latency:        {p95:.1f}ms  <-- target ≤2800ms")
+    print(f"P95 Latency:        {p95:.1f}ms")
     print(f"P99 Latency:        {p99:.1f}ms")
     print(f"Max Latency:        {max(latencies):.1f}ms")
     print(f"-------------------------------\n")
 
-    if p95 <= 2800:
-        print("✅ SUCCESS: P95 is within the 2.8s target.")
+    # If testing /analyze, check SLO. If /enqueue, check if it's "instant"
+    if endpoint == "analyze":
+        if p95 <= 2800:
+            print("✅ SUCCESS: P95 is within the 2.8s target.")
+        else:
+            print("❌ FAILURE: P95 exceeds the 2.8s target.")
     else:
-        print("❌ FAILURE: P95 exceeds the 2.8s target.")
+        if p95 <= 100:
+             print("✅ SUCCESS: Queue ingestion is near-instant (<100ms).")
+        else:
+             print("⚠️ WARNING: Queue ingestion is taking longer than expected.")
 
 
 if __name__ == "__main__":
@@ -121,6 +132,7 @@ if __name__ == "__main__":
     parser.add_argument("--requests", type=int, default=10, help="Total number of requests")
     parser.add_argument("--concurrency", type=int, default=2, help="Number of concurrent requests")
     parser.add_argument("--url", type=str, default=DEFAULT_BASE_URL, help="Base URL of the API")
+    parser.add_argument("--endpoint", type=str, default="analyze", choices=["analyze", "enqueue"], help="Endpoint to test")
     
     args = parser.parse_args()
     
@@ -128,5 +140,6 @@ if __name__ == "__main__":
         num_requests=args.requests,
         concurrency=args.concurrency,
         base_url=args.url,
+        endpoint=args.endpoint,
         tickers=DEFAULT_TICKERS
     ))
