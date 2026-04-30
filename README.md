@@ -328,3 +328,35 @@ Add `finnhub_api_key` and `openai_api_key` (or whichever LLM provider) to `Setti
 ### Manual Verification
 - Confirm Redis caching is working by calling the same endpoint twice and verifying the second call returns immediately
 - Confirm MongoDB stores the analysis report in the `trading_framework` database
+
+## 📊 Benchmarking & Performance
+
+The framework is designed to hit a **P95 latency of ≤ 2.8s** for a full 4-agent analysis.
+
+### 🚀 Running the Benchmark Script
+You can measure throughput (RPS), average latency, and P95/P99 percentiles using the included benchmarking script.
+
+```bash
+# Run with 10 requests and concurrency of 2
+python3 scripts/benchmark.py --requests 10 --concurrency 2
+```
+
+### 🧪 Running Performance Tests (Pytest)
+We use `pytest` to enforce performance SLOs (Service Level Objectives) as code.
+
+```bash
+# Install test dependencies if needed
+pip install pytest pytest-asyncio httpx
+
+# Run performance tests
+pytest tests/test_performance_slos.py -v -s
+```
+
+### 📈 Latency SLO Targets
+| Metric | Target | Notes |
+|---|---|---|
+| P50 (Median) | < 2.0s | Typical response time on cache miss |
+| P95 Latency | ≤ 2.8s | Maximum acceptable time for 95% of users |
+| Cache Hit | < 0.1s | Fast path using Redis |
+| Throughput | > 0.5 req/s | Handling ~28K requests per day |
+
